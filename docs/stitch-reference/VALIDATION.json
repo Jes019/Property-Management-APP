@@ -1,0 +1,146 @@
+[
+  {
+    "file": "onboarding-flow.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 4046
+  },
+  {
+    "file": "owner-connection-approval.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 5077
+  },
+  {
+    "file": "company-settings.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 7329
+  },
+  {
+    "file": "branding-settings.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 8259
+  },
+  {
+    "file": "staff-management.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 6393
+  },
+  {
+    "file": "documents-history.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 12625
+  },
+  {
+    "file": "maintenance-job-detail.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 9055
+  },
+  {
+    "file": "preventive-maintenance.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 10862
+  },
+  {
+    "file": "issue-dashboard.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 9249
+  },
+  {
+    "file": "asset-detail.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 7620
+  },
+  {
+    "file": "quote-comparison.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 9722
+  },
+  {
+    "file": "inspection-review.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 7279
+  },
+  {
+    "file": "inspection-checklist.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 11123
+  },
+  {
+    "file": "create-issue.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 5884
+  },
+  {
+    "file": "owner-portal.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 6882
+  },
+  {
+    "file": "home-dashboard.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 7036
+  },
+  {
+    "file": "properties-list.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 6921
+  },
+  {
+    "file": "property-detail.html",
+    "exists": true,
+    "doctype": true,
+    "html_tag": true,
+    "has_data_placeholder": false,
+    "size_bytes": 7308
+  }
+]

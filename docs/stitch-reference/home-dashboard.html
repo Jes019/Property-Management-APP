@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Home Dashboard - JTC Property Services</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+<style>
+body { font-family: 'Inter', sans-serif; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+</style>
+</head>
+<body class="bg-[#FBF8FD] text-[#1F3461] antialiased">
+<header class="fixed top-0 w-full z-50 bg-white border-b border-[#DBD9DE] shadow-sm">
+<div class="flex items-center justify-between px-6 h-16">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#1F3461]">menu</span>
+<h1 class="text-xl font-bold tracking-tight">JTC Property Services</h1>
+</div>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-[#C9A84C]">
+<img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=100" alt="Profile" class="w-full h-full object-cover">
+</div>
+</div>
+</header>
+<main class="pt-20 pb-28 px-6 space-y-8">
+<section class="bg-white rounded-2xl p-6 shadow-[0px_4px_20px_rgba(31,52,97,0.08)] border border-[#DBD9DE]">
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#1F3461]">calendar_today</span>
+<h2 class="text-lg font-bold">Today's Inspections</h2>
+</div>
+<span class="bg-[#1F3461] text-white text-xs font-bold px-3 py-1.5 rounded-full">3 Scheduled</span>
+</div>
+<div class="border border-[#DBD9DE] rounded-xl overflow-hidden mb-4">
+<img src="https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&q=80&w=800" alt="Villa Azure" class="w-full h-48 object-cover">
+<div class="p-4">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-bold text-base">Villa Azure, 45 Coastal Road</h3>
+<span class="bg-[#FEE2E2] text-[#991B1B] text-[10px] font-bold px-2 py-1 rounded tracking-wider uppercase">09:00 AM</span>
+</div>
+<div class="flex items-center gap-2 text-sm text-[#1F3461]/70">
+<span class="material-symbols-outlined text-sm">person</span>
+<span>Move-in Inspection</span>
+</div>
+</div>
+</div>
+<div class="border border-[#DBD9DE] rounded-xl overflow-hidden">
+<img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=800" alt="Marina Heights" class="w-full h-48 object-cover">
+<div class="p-4">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-bold text-base">Apt 4B, Marina Heights</h3>
+<span class="bg-[#F3F4F6] text-[#374151] text-[10px] font-bold px-2 py-1 rounded tracking-wider uppercase">11:30 AM</span>
+</div>
+<div class="flex items-center gap-2 text-sm text-[#1F3461]/70">
+<span class="material-symbols-outlined text-sm">cached</span>
+<span>Routine Maintenance Check</span>
+</div>
+</div>
+</div>
+</section>
+<section>
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-lg font-bold">Upcoming</h2>
+<button class="text-sm font-semibold text-[#1F3461]">View All</button>
+</div>
+<div class="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1 scrollbar-hide">
+<div class="min-w-[280px] bg-white rounded-xl p-5 border border-[#DBD9DE]">
+<div class="flex items-center gap-4 mb-3">
+<div class="w-12 h-12 rounded-full bg-[#1F3461] text-white flex flex-col items-center justify-center font-bold">
+<span class="text-sm leading-none">24</span>
+</div>
+<div>
+<p class="text-xs text-[#1F3461]/60">Tomorrow</p>
+<p class="text-sm font-bold">2 Inspections</p>
+</div>
+</div>
+<h3 class="font-bold text-base mb-1">The Olive Grove Estate</h3>
+<p class="text-sm text-[#1F3461]/70">Pre-lease & Safety Audit</p>
+</div>
+</div>
+</section>
+<section class="bg-[#1F3461] rounded-2xl p-6 text-white">
+<h2 class="text-lg font-bold mb-1">Open Issues</h2>
+<div class="flex items-baseline gap-2 mb-6">
+<span class="text-5xl font-bold">12</span>
+<span class="text-sm opacity-80 uppercase tracking-wider font-semibold">Requires Action</span>
+</div>
+<button class="w-full bg-white text-[#1F3461] py-3 rounded-lg font-bold text-sm tracking-wider uppercase transition-transform active:scale-95">Review Tickets</button>
+</section>
+<section class="bg-white rounded-2xl p-6 border border-[#DBD9DE]">
+<div class="flex items-center gap-3 mb-6">
+<span class="material-symbols-outlined text-[#92400E]">warning</span>
+<h2 class="text-lg font-bold">Requires Attention</h2>
+</div>
+<div class="space-y-6">
+<div class="flex items-start justify-between">
+<div><h4 class="font-bold text-sm">Unit 12, Palm Residences</h4><p class="text-xs text-[#1F3461]/70">HVAC Malfunction Reported</p></div>
+<span class="material-symbols-outlined text-[#92400E]">error</span>
+</div>
+<div class="border-t border-[#DBD9DE] pt-6 flex items-start justify-between">
+<div><h4 class="font-bold text-sm">18 Cypress Lane</h4><p class="text-xs text-[#1F3461]/70">Overdue Quarterly Inspection</p></div>
+<span class="material-symbols-outlined text-[#92400E]">notifications_active</span>
+</div>
+<div class="border-t border-[#DBD9DE] pt-6 flex items-start justify-between">
+<div><h4 class="font-bold text-sm">Villa Sunstone</h4><p class="text-xs text-[#1F3461]/70">Pool Maintenance Delayed</p></div>
+<span class="material-symbols-outlined text-[#92400E]">notifications</span>
+</div>
+</div>
+</section>
+</main>
+<button class="fixed bottom-24 right-6 w-14 h-14 bg-[#7D6B0F] text-white rounded-full shadow-lg flex items-center justify-center z-50 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-3xl">add</span>
+</button>
+<nav class="fixed bottom-0 w-full bg-white border-t border-[#DBD9DE] px-2 h-20 safe-pb z-50">
+<div class="flex justify-around items-center h-full">
+<a href="#" class="flex flex-col items-center justify-center text-[#1F3461] bg-[#1F3461]/10 rounded-xl px-4 py-2"><span class="material-symbols-outlined">dashboard</span><span class="text-[10px] font-bold mt-1 uppercase tracking-tighter">Home</span></a>
+<a href="#" class="flex flex-col items-center justify-center text-[#1F3461]/50 px-4 py-2"><span class="material-symbols-outlined">domain</span><span class="text-[10px] font-bold mt-1 uppercase tracking-tighter">Properties</span></a>
+<a href="#" class="flex flex-col items-center justify-center text-[#1F3461]/50 px-4 py-2"><span class="material-symbols-outlined">fact_check</span><span class="text-[10px] font-bold mt-1 uppercase tracking-tighter">Inspections</span></a>
+<a href="#" class="flex flex-col items-center justify-center text-[#1F3461]/50 px-4 py-2"><span class="material-symbols-outlined">description</span><span class="text-[10px] font-bold mt-1 uppercase tracking-tighter">Reports</span></a>
+</div>
+</nav>
+</body>
+</html>

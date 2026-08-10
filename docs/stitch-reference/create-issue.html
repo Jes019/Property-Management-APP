@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Create Issue - JTC Property Services</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+<style>
+body { font-family: 'Inter', sans-serif; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.priority-btn.active { background-color: white; border-color: #1F3461; box-shadow: 0 4px 12px rgba(31, 52, 97, 0.08); color: #1F3461; }
+</style>
+</head>
+<body class="bg-[#FBF8FD] text-[#1F3461] antialiased">
+<header class="fixed top-0 w-full z-50 bg-[#FBF8FD] border-b border-[#DBD9DE]"><div class="flex items-center justify-between px-6 h-16"><button class="w-10 h-10 flex items-center justify-start text-[#1F3461] active:scale-90 transition-transform"><span class="material-symbols-outlined">close</span></button><h1 class="text-lg font-bold tracking-tight">JTC Property Services</h1><div class="w-10 h-10 rounded-full overflow-hidden border-2 border-[#C9A84C]"><img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=100" alt="Profile" class="w-full h-full object-cover"></div></div></header>
+<main class="pt-20 pb-32 px-6 space-y-8">
+<div><h2 class="text-3xl font-bold mb-2">Report Issue</h2><p class="text-[#1F3461]/70 leading-relaxed">Document property damage or required maintenance.</p></div>
+<section class="bg-white rounded-2xl border-2 border-dashed border-[#DBD9DE] p-10 flex flex-col items-center justify-center text-center space-y-4 active:bg-[#F3F4F6] transition-colors"><div class="w-16 h-16 rounded-full bg-[#1F3461]/5 flex items-center justify-center"><span class="material-symbols-outlined text-3xl text-[#1F3461]">add_a_photo</span></div><div><p class="font-bold text-base">Tap to upload photos</p><p class="text-xs text-[#1F3461]/40 mt-1">Maximum 5 photos, 10MB each</p></div></section>
+<section class="bg-white rounded-2xl border border-[#DBD9DE] p-6 space-y-6 shadow-sm"><div class="space-y-2"><label class="text-[10px] font-bold uppercase tracking-widest opacity-60">Location</label><div class="relative"><select class="w-full bg-[#F3F4F6] border border-[#DBD9DE] rounded-xl py-4 pl-4 pr-10 text-sm font-medium appearance-none focus:outline-none focus:ring-2 focus:ring-[#1F3461]/5"><option>Select location...</option><option>Main Entrance</option><option>Living Room</option><option>Master Bedroom</option><option>Kitchen</option><option>Main Terrace</option></select><span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#1F3461]/40 pointer-events-none">expand_more</span></div></div><div class="space-y-2"><label class="text-[10px] font-bold uppercase tracking-widest opacity-60">Description</label><textarea placeholder="Provide details about the issue..." rows="4" class="w-full bg-[#F3F4F6] border border-[#DBD9DE] rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#1F3461]/5 resize-none"></textarea></div></section>
+<section class="bg-white rounded-2xl border border-[#DBD9DE] p-6 space-y-8 shadow-sm"><div class="space-y-4"><label class="text-[10px] font-bold uppercase tracking-widest opacity-60">Priority Level</label><div class="grid grid-cols-2 gap-3"><button class="priority-btn border border-[#DBD9DE] py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-[#F3F4F6] text-[#1F3461]/40 active:scale-95 transition-all">Low</button><button class="priority-btn border border-[#DBD9DE] py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-[#F3F4F6] text-[#1F3461]/40 active:scale-95 transition-all">Medium</button><button class="priority-btn border-2 border-[#1F3461] py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-white shadow-md text-[#1F3461] active:scale-95 transition-all">High</button><button class="priority-btn border border-[#DBD9DE] py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-[#F3F4F6] text-[#1F3461]/40 active:scale-95 transition-all">Urgent</button></div></div><div class="space-y-2 pt-6 border-t border-[#DBD9DE]/50"><label class="text-[10px] font-bold uppercase tracking-widest opacity-60">Recommended Action</label><input type="text" placeholder="e.g., Send plumber to fix leak" class="w-full bg-[#F3F4F6] border border-[#DBD9DE] rounded-xl py-4 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#1F3461]/5"></div><div class="flex items-center justify-between pt-6 border-t border-[#DBD9DE]/50"><div class="space-y-0.5"><p class="text-sm font-bold">Contractor Required?</p><p class="text-[10px] text-[#1F3461]/50">Does this require external services?</p></div><div class="relative inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer"><div class="w-14 h-8 bg-[#DBD9DE] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#1F3461] after:content-[''] after:absolute after:top-1 after:left-1 after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all"></div></div></div></section>
+</main>
+<div class="fixed bottom-0 w-full bg-[#FBF8FD] p-6 safe-pb z-50"><button class="w-full bg-[#1F3461] text-white py-5 rounded-2xl font-bold text-sm tracking-[0.2em] uppercase flex items-center justify-center gap-3 shadow-lg active:scale-[0.98] transition-all"><span class="material-symbols-outlined text-xl">save</span>Save Issue</button></div>
+</body>
+</html>
