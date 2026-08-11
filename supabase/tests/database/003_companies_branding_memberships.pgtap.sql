@@ -2,7 +2,7 @@ BEGIN;
 
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(30);
+SELECT plan(31);
 
 SELECT ok(
   to_regclass('public.companies') IS NOT NULL,
@@ -391,6 +391,18 @@ VALUES (
   '20000000-0000-0000-0000-000000000002',
   '10000000-0000-0000-0000-000000000001',
   'READ_ONLY'
+);
+
+SELECT ok(
+  COALESCE((
+    SELECT array_agg(company_id ORDER BY company_id) = ARRAY[
+      '20000000-0000-0000-0000-000000000002'::uuid
+    ]
+    FROM public.company_memberships
+    WHERE profile_id = '10000000-0000-0000-0000-000000000001'
+      AND is_active
+  ), false),
+  'active membership lookup excludes inactive Company A and returns active Company B'
 );
 
 SELECT ok(
