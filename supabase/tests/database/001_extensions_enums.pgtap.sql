@@ -1,5 +1,7 @@
 BEGIN;
 
+SET LOCAL search_path = extensions, public;
+
 SELECT plan(16);
 
 SELECT has_type('public', 'company_role', 'company_role exists in public');
