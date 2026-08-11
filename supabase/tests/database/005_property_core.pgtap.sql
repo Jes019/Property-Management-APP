@@ -995,6 +995,14 @@ VALUES
     'SERVICE',
     'ACTIVE',
     'COORDINATION_SERVICE'
+  ),
+  (
+    '54000000-0000-0000-0000-000000000007',
+    '53000000-0000-0000-0000-000000000004',
+    '52000000-0000-0000-0000-000000000003',
+    'SERVICE',
+    'ACTIVE',
+    'INSPECTION_SERVICE'
   );
 
 SELECT ok(
@@ -1372,7 +1380,7 @@ SET LOCAL request.jwt.claim.sub TO '51000000-0000-0000-0000-000000000001';
 SELECT ok(
   security.company_has_property_scope(
     '52000000-0000-0000-0000-000000000003',
-    '53000000-0000-0000-0000-000000000003',
+    '53000000-0000-0000-0000-000000000004',
     ARRAY['INSPECTION_SERVICE']::public.property_company_relationship_scope[]
   ),
   'inspection service access matches an explicitly requested inspection scope'
@@ -1381,7 +1389,16 @@ SELECT ok(
 SELECT ok(
   NOT security.company_has_property_scope(
     '52000000-0000-0000-0000-000000000003',
-    '53000000-0000-0000-0000-000000000003',
+    '53000000-0000-0000-0000-000000000004',
+    ARRAY['MAINTENANCE_SERVICE']::public.property_company_relationship_scope[]
+  ),
+  'an inspection-only service relationship does not grant maintenance scope'
+);
+
+SELECT ok(
+  NOT security.company_has_property_scope(
+    '52000000-0000-0000-0000-000000000003',
+    '53000000-0000-0000-0000-000000000004',
     ARRAY['FULL_MANAGEMENT']::public.property_company_relationship_scope[]
   ),
   'service scope does not expand implicitly to full management'
