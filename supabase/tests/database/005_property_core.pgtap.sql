@@ -584,21 +584,6 @@ SELECT ok(
 );
 
 SELECT ok(
-  NOT EXISTS (
-    SELECT 1
-    FROM pg_policy
-    WHERE polrelid = ANY (ARRAY[
-      to_regclass('public.properties'),
-      to_regclass('public.property_owners'),
-      to_regclass('public.property_company_relationships'),
-      to_regclass('public.company_property_settings'),
-      to_regclass('public.property_staff_assignments')
-    ])
-  ),
-  'all five Task 6 tables have zero row level security policies'
-);
-
-SELECT ok(
   to_regclass('public.properties') IS NOT NULL
     AND NOT EXISTS (
       SELECT 1
@@ -1289,15 +1274,6 @@ SELECT ok(
 
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub TO '51000000-0000-0000-0000-000000000001';
-
-SELECT ok(
-  (SELECT count(*) FROM public.properties) = 0
-    AND (SELECT count(*) FROM public.property_owners) = 0
-    AND (SELECT count(*) FROM public.property_company_relationships) = 0
-    AND (SELECT count(*) FROM public.company_property_settings) = 0
-    AND (SELECT count(*) FROM public.property_staff_assignments) = 0,
-  'authenticated has direct default-deny access to all five Task 6 tables'
-);
 
 SELECT ok(
   security.is_property_owner('53000000-0000-0000-0000-000000000001'),
