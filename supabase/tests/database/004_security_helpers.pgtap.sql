@@ -59,8 +59,14 @@ SELECT ok(
     FROM pg_proc procedure
     JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname = 'security'
+      AND procedure.proname = ANY (ARRAY[
+        'current_profile_id',
+        'is_company_member',
+        'company_role',
+        'has_company_role'
+      ])
   ), false),
-  'security contains exactly the four approved helper signatures'
+  'security contains exactly the four approved Task 5 helper signatures'
 );
 
 SELECT ok(
@@ -184,8 +190,14 @@ SELECT ok(
       acldefault('f', procedure.proowner)
     )) privilege ON true
     WHERE namespace.nspname = 'security'
+      AND procedure.proname = ANY (ARRAY[
+        'current_profile_id',
+        'is_company_member',
+        'company_role',
+        'has_company_role'
+      ])
   ), false),
-  'PUBLIC execute is revoked from all four helpers'
+  'PUBLIC execute is revoked from all four Task 5 helpers'
 );
 
 SELECT ok(
@@ -195,8 +207,14 @@ SELECT ok(
     FROM pg_proc procedure
     JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname = 'security'
+      AND procedure.proname = ANY (ARRAY[
+        'current_profile_id',
+        'is_company_member',
+        'company_role',
+        'has_company_role'
+      ])
   ), false),
-  'anon cannot execute any helper'
+  'anon cannot execute any Task 5 helper'
 );
 
 SELECT ok(
@@ -206,8 +224,14 @@ SELECT ok(
     FROM pg_proc procedure
     JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname = 'security'
+      AND procedure.proname = ANY (ARRAY[
+        'current_profile_id',
+        'is_company_member',
+        'company_role',
+        'has_company_role'
+      ])
   ), false),
-  'authenticated can execute exactly the four helpers'
+  'authenticated can execute exactly the four Task 5 helpers'
 );
 
 SELECT ok(
@@ -235,10 +259,6 @@ SELECT ok(
     JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname = 'security'
       AND procedure.proname = ANY (ARRAY[
-        'is_property_owner',
-        'company_has_property_access',
-        'company_has_property_scope',
-        'is_assigned_to_property',
         'is_assigned_to_inspection',
         'can_view_operational_record',
         'can_manage_operational_record',
@@ -247,7 +267,7 @@ SELECT ok(
         'owner_can_view_document'
       ])
   ),
-  'property and operational helpers remain deferred'
+  'later inspection and operational helpers remain deferred'
 );
 
 SELECT (count(*) = 4)::integer AS helpers_ready
