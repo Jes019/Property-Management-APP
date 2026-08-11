@@ -2,7 +2,7 @@ BEGIN;
 
 SET LOCAL search_path = extensions, public;
 
-SELECT no_plan();
+SELECT plan(90);
 
 SELECT ok(
   COALESCE((
@@ -505,10 +505,55 @@ SELECT is(
   'Admin A reads only Company A relationship rows'
 );
 
-SELECT ok(
-  (SELECT count(*) FROM public.company_property_settings) = 1
-    AND (SELECT count(*) FROM public.property_staff_assignments) = 1,
-  'Admin A reads only Company A settings and assignments'
+SELECT is(
+  (
+    SELECT array_agg(
+      company_id::text || ':' || property_id::text
+      ORDER BY company_id, property_id
+    )
+    FROM public.company_property_settings
+  ),
+  ARRAY[
+    '62000000-0000-0000-0000-000000000001:63000000-0000-0000-0000-000000000001'
+  ]::text[],
+  'Admin A reads the exact Company A settings tenant key'
+);
+
+SELECT is(
+  (
+    SELECT array_agg(
+      company_id::text || ':' || property_id::text || ':' || profile_id::text
+      ORDER BY company_id, property_id, profile_id
+    )
+    FROM public.property_staff_assignments
+  ),
+  ARRAY[
+    '62000000-0000-0000-0000-000000000001:63000000-0000-0000-0000-000000000001:61000000-0000-0000-0000-000000000003'
+  ]::text[],
+  'Admin A reads the exact Company A assignment tenant and profile key'
+);
+
+SELECT is(
+  (
+    SELECT count(*)
+    FROM public.company_property_settings
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+  ),
+  0::bigint,
+  'Admin A cannot select seeded Company B settings by hostile UUID substitution'
+);
+
+SELECT is(
+  (
+    SELECT count(*)
+    FROM public.property_staff_assignments
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+      AND profile_id = '61000000-0000-0000-0000-000000000007'
+  ),
+  0::bigint,
+  'Admin A cannot select seeded Company B assignment by hostile UUID substitution'
 );
 
 SELECT ok(
@@ -797,6 +842,17 @@ SELECT throws_ok(
   '42501', NULL, 'MANAGER cannot reassign a Company A settings row to Company B UUIDs'
 );
 SELECT results_eq(
+  $$WITH changed AS (
+    UPDATE public.company_property_settings
+    SET created_at = '1999-01-01 00:00:00+00'
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+    RETURNING 1
+  ) SELECT count(*) FROM changed$$,
+  $$VALUES (0::bigint)$$,
+  'MANAGER cannot update an existing Company B settings row through old-row USING'
+);
+SELECT results_eq(
   $$WITH removed AS (
     DELETE FROM public.company_property_settings
     WHERE company_id = '62000000-0000-0000-0000-000000000002'
@@ -813,6 +869,18 @@ SELECT throws_ok(
 SELECT throws_ok(
   $$UPDATE public.property_staff_assignments SET company_id = '62000000-0000-0000-0000-000000000002', property_id = '63000000-0000-0000-0000-000000000003', profile_id = '61000000-0000-0000-0000-000000000007' WHERE company_id = '62000000-0000-0000-0000-000000000001' AND property_id = '63000000-0000-0000-0000-000000000001' AND profile_id = '61000000-0000-0000-0000-000000000003'$$,
   '42501', NULL, 'MANAGER cannot reassign a Company A assignment to Company B UUIDs'
+);
+SELECT results_eq(
+  $$WITH changed AS (
+    UPDATE public.property_staff_assignments
+    SET is_active = false
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+      AND profile_id = '61000000-0000-0000-0000-000000000007'
+    RETURNING 1
+  ) SELECT count(*) FROM changed$$,
+  $$VALUES (0::bigint)$$,
+  'MANAGER cannot update an existing Company B assignment through old-row USING'
 );
 SELECT results_eq(
   $$WITH removed AS (
@@ -887,6 +955,27 @@ SELECT throws_ok(
   $$UPDATE public.company_property_settings SET company_id = '62000000-0000-0000-0000-000000000002', property_id = '63000000-0000-0000-0000-000000000003' WHERE company_id = '62000000-0000-0000-0000-000000000001' AND property_id = '63000000-0000-0000-0000-000000000001'$$,
   '42501', NULL, 'ADMIN cannot reassign settings to hostile Company B UUIDs'
 );
+SELECT results_eq(
+  $$WITH changed AS (
+    UPDATE public.company_property_settings
+    SET created_at = '1998-01-01 00:00:00+00'
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+    RETURNING 1
+  ) SELECT count(*) FROM changed$$,
+  $$VALUES (0::bigint)$$,
+  'ADMIN cannot update an existing Company B settings row through old-row USING'
+);
+SELECT results_eq(
+  $$WITH removed AS (
+    DELETE FROM public.company_property_settings
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+    RETURNING 1
+  ) SELECT count(*) FROM removed$$,
+  $$VALUES (0::bigint)$$,
+  'ADMIN cannot delete an existing Company B settings row through old-row USING'
+);
 SELECT throws_ok(
   $$INSERT INTO public.property_staff_assignments (company_id, property_id, profile_id) VALUES ('62000000-0000-0000-0000-000000000002', '63000000-0000-0000-0000-000000000004', '61000000-0000-0000-0000-000000000001')$$,
   '42501', NULL, 'ADMIN cannot insert assignments with hostile Company B UUIDs'
@@ -894,6 +983,29 @@ SELECT throws_ok(
 SELECT throws_ok(
   $$UPDATE public.property_staff_assignments SET company_id = '62000000-0000-0000-0000-000000000002', property_id = '63000000-0000-0000-0000-000000000003', profile_id = '61000000-0000-0000-0000-000000000007' WHERE company_id = '62000000-0000-0000-0000-000000000001' AND property_id = '63000000-0000-0000-0000-000000000001' AND profile_id = '61000000-0000-0000-0000-000000000003'$$,
   '42501', NULL, 'ADMIN cannot reassign assignments to hostile Company B UUIDs'
+);
+SELECT results_eq(
+  $$WITH changed AS (
+    UPDATE public.property_staff_assignments
+    SET is_active = false
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+      AND profile_id = '61000000-0000-0000-0000-000000000007'
+    RETURNING 1
+  ) SELECT count(*) FROM changed$$,
+  $$VALUES (0::bigint)$$,
+  'ADMIN cannot update an existing Company B assignment through old-row USING'
+);
+SELECT results_eq(
+  $$WITH removed AS (
+    DELETE FROM public.property_staff_assignments
+    WHERE company_id = '62000000-0000-0000-0000-000000000002'
+      AND property_id = '63000000-0000-0000-0000-000000000003'
+      AND profile_id = '61000000-0000-0000-0000-000000000007'
+    RETURNING 1
+  ) SELECT count(*) FROM removed$$,
+  $$VALUES (0::bigint)$$,
+  'ADMIN cannot delete an existing Company B assignment through old-row USING'
 );
 
 SET LOCAL request.jwt.claim.sub TO '61000000-0000-0000-0000-000000000007';
