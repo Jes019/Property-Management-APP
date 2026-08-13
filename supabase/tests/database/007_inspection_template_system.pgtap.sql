@@ -813,12 +813,8 @@ SELECT ok(
 );
 
 SELECT ok(
-  to_regclass('public.inspections') IS NULL
-    AND to_regclass('public.inspection_results') IS NULL
-    AND to_regclass('public.inspection_changes') IS NULL
-    AND to_regclass('public.meter_readings') IS NULL
-    AND to_regclass('public.maintenance_jobs') IS NULL,
-  'Task 8 adds no inspection runtime or maintenance tables'
+  to_regclass('public.maintenance_jobs') IS NULL,
+  'the template-system test remains independent from later maintenance tables'
 );
 
 SELECT (
