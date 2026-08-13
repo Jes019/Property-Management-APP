@@ -495,7 +495,7 @@ SELECT ok(
         'inspection_template_items'
       ])
   ), false),
-  'all template policies are restrictive, authenticated-only, and command-specific'
+  'all template policies are nontrivial, authenticated-only, permissive, and command-specific'
 );
 
 SELECT ok(
@@ -682,6 +682,23 @@ SELECT ok(
 
 SELECT ok(
   COALESCE((
+    SELECT count(*) = 2
+      AND bool_and(
+        position('FOR SHARE' in upper(pg_get_functiondef(procedure.oid))) > 0
+      )
+    FROM pg_proc procedure
+    JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'security'
+      AND procedure.proname IN (
+        'protect_inspection_template_section',
+        'protect_inspection_template_item'
+      )
+  ), false),
+  'section and item guards take conflicting ancestor locks before checking frozen state'
+);
+
+SELECT ok(
+  COALESCE((
     SELECT count(*) = 4
       AND bool_and(
         procedure.proowner = table_relation.relowner
@@ -751,7 +768,7 @@ WITH expected(trigger_name, table_name, trigger_type) AS (
     (
       'inspection_templates_protect_frozen_delete'::name,
       'inspection_templates'::name,
-      11::smallint
+      27::smallint
     ),
     (
       'inspection_template_versions_protect_frozen'::name,
@@ -835,7 +852,9 @@ VALUES
   ('71000000-0000-0000-0000-000000000005'),
   ('71000000-0000-0000-0000-000000000006'),
   ('71000000-0000-0000-0000-000000000007'),
-  ('71000000-0000-0000-0000-000000000008');
+  ('71000000-0000-0000-0000-000000000008'),
+  ('71000000-0000-0000-0000-000000000009'),
+  ('71000000-0000-0000-0000-000000000010');
 
 INSERT INTO public.profiles (id)
 VALUES
@@ -846,7 +865,9 @@ VALUES
   ('71000000-0000-0000-0000-000000000005'),
   ('71000000-0000-0000-0000-000000000006'),
   ('71000000-0000-0000-0000-000000000007'),
-  ('71000000-0000-0000-0000-000000000008');
+  ('71000000-0000-0000-0000-000000000008'),
+  ('71000000-0000-0000-0000-000000000009'),
+  ('71000000-0000-0000-0000-000000000010');
 
 INSERT INTO public.companies (id, name)
 VALUES
@@ -860,7 +881,10 @@ VALUES
   ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000003', 'INSPECTOR', true),
   ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000004', 'COORDINATOR', true),
   ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000005', 'READ_ONLY', true),
-  ('72000000-0000-0000-0000-000000000002', '71000000-0000-0000-0000-000000000006', 'ADMIN', true);
+  ('72000000-0000-0000-0000-000000000002', '71000000-0000-0000-0000-000000000006', 'ADMIN', true),
+  ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000009', 'ADMIN', true),
+  ('72000000-0000-0000-0000-000000000002', '71000000-0000-0000-0000-000000000009', 'MANAGER', true),
+  ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000010', 'ADMIN', false);
 
 INSERT INTO public.properties (id, name)
 VALUES ('73000000-0000-0000-0000-000000000001', 'Owner-only property');
@@ -1070,6 +1094,33 @@ SELECT is(
   ),
   ARRAY['Roof', 'Walls']::text[],
   'items have deterministic parent-local ordering'
+);
+
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_template_versions
+    SET frozen_at = '2026-08-13 09:00:00+00'
+    WHERE id = '75000000-0000-0000-0000-000000000102';
+
+    RAISE EXCEPTION 'hard guard accepted a current frozen version'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000',
+  NULL,
+  'the hard trigger rejects freezing a version while it remains current'
+);
+
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM public.inspection_template_versions
+    WHERE id = '75000000-0000-0000-0000-000000000102'
+      AND is_current
+      AND frozen_at IS NULL
+  ),
+  'the rejected current-freeze transition leaves the version unchanged'
 );
 
 SET LOCAL ROLE authenticated;
@@ -1330,19 +1381,19 @@ SELECT throws_ok(
 );
 SELECT throws_ok(
   $$UPDATE public.inspection_templates SET company_id = '72000000-0000-0000-0000-000000000002' WHERE id = '74000000-0000-0000-0000-000000000110'$$,
-  '42501', NULL, 'Company A MANAGER cannot reparent its template into Company B'
+  '55000', NULL, 'Company A MANAGER cannot reparent its template into Company B'
 );
 SELECT throws_ok(
   $$UPDATE public.inspection_template_versions SET template_id = '74000000-0000-0000-0000-000000000201' WHERE id = '75000000-0000-0000-0000-000000000110'$$,
-  '42501', NULL, 'Company A MANAGER cannot reparent its version into Company B'
+  '55000', NULL, 'Company A MANAGER cannot reparent its version into Company B'
 );
 SELECT throws_ok(
   $$UPDATE public.inspection_template_sections SET version_id = '75000000-0000-0000-0000-000000000201' WHERE id = '76000000-0000-0000-0000-000000000110'$$,
-  '42501', NULL, 'Company A MANAGER cannot reparent its section into Company B'
+  '55000', NULL, 'Company A MANAGER cannot reparent its section into Company B'
 );
 SELECT throws_ok(
   $$UPDATE public.inspection_template_items SET section_id = '76000000-0000-0000-0000-000000000201' WHERE id = '77000000-0000-0000-0000-000000000110'$$,
-  '42501', NULL, 'Company A MANAGER cannot reparent its item into Company B'
+  '55000', NULL, 'Company A MANAGER cannot reparent its item into Company B'
 );
 SELECT results_eq(
   $$UPDATE public.inspection_templates SET name = 'Hostile edit' WHERE id = '74000000-0000-0000-0000-000000000201' RETURNING 1$$,
@@ -1416,7 +1467,7 @@ SELECT results_eq(
 );
 SELECT throws_ok(
   $$UPDATE public.inspection_template_versions SET template_id = '74000000-0000-0000-0000-000000000201' WHERE id = '75000000-0000-0000-0000-000000000111'$$,
-  '42501', NULL, 'Company A ADMIN cannot reparent its version into Company B'
+  '55000', NULL, 'Company A ADMIN cannot reparent its version into Company B'
 );
 SELECT results_eq(
   $$DELETE FROM public.inspection_templates WHERE id = '74000000-0000-0000-0000-000000000111' RETURNING 1$$,
@@ -1425,36 +1476,234 @@ SELECT results_eq(
 );
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000003';
-SELECT is(
-  (SELECT count(*) FROM public.inspection_templates),
-  2::bigint,
-  'INSPECTOR selects its own company template graph without property assignment'
+SELECT ok(
+  (SELECT count(*) FROM public.inspection_templates) = 2
+    AND (SELECT count(*) FROM public.inspection_template_versions) = 3
+    AND (SELECT count(*) FROM public.inspection_template_sections) = 4
+    AND (SELECT count(*) FROM public.inspection_template_items) = 5,
+  'INSPECTOR selects all four own-company graph tables without property assignment'
 );
 SELECT throws_ok(
   $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Inspector write')$$,
-  '42501', NULL, 'INSPECTOR cannot mutate templates'
+  '42501', NULL, 'INSPECTOR cannot insert templates'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_versions (template_id, version_number, is_current) VALUES ('74000000-0000-0000-0000-000000000102', 903, false)$$,
+  '42501', NULL, 'INSPECTOR cannot insert versions'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_sections (version_id, title, sort_order) VALUES ('75000000-0000-0000-0000-000000000104', 'Inspector write', 903)$$,
+  '42501', NULL, 'INSPECTOR cannot insert sections'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_items (section_id, label, sort_order) VALUES ('76000000-0000-0000-0000-000000000104', 'Inspector write', 903)$$,
+  '42501', NULL, 'INSPECTOR cannot insert items'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'INSPECTOR cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'INSPECTOR cannot delete from any graph table'
 );
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000004';
-SELECT is(
-  (SELECT count(*) FROM public.inspection_template_versions),
-  3::bigint,
-  'COORDINATOR selects its own company version graph'
+SELECT ok(
+  (SELECT count(*) FROM public.inspection_templates) = 2
+    AND (SELECT count(*) FROM public.inspection_template_versions) = 3
+    AND (SELECT count(*) FROM public.inspection_template_sections) = 4
+    AND (SELECT count(*) FROM public.inspection_template_items) = 5,
+  'COORDINATOR selects all four own-company graph tables'
 );
 SELECT throws_ok(
-  $$INSERT INTO public.inspection_template_versions (template_id, version_number, is_current) VALUES ('74000000-0000-0000-0000-000000000102', 2, false)$$,
-  '42501', NULL, 'COORDINATOR cannot mutate versions'
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Coordinator write')$$,
+  '42501', NULL, 'COORDINATOR cannot insert templates'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_versions (template_id, version_number, is_current) VALUES ('74000000-0000-0000-0000-000000000102', 904, false)$$,
+  '42501', NULL, 'COORDINATOR cannot insert versions'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_sections (version_id, title, sort_order) VALUES ('75000000-0000-0000-0000-000000000104', 'Coordinator write', 904)$$,
+  '42501', NULL, 'COORDINATOR cannot insert sections'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_items (section_id, label, sort_order) VALUES ('76000000-0000-0000-0000-000000000104', 'Coordinator write', 904)$$,
+  '42501', NULL, 'COORDINATOR cannot insert items'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'COORDINATOR cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'COORDINATOR cannot delete from any graph table'
 );
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000005';
-SELECT is(
-  (SELECT count(*) FROM public.inspection_template_items),
-  5::bigint,
-  'READ_ONLY selects its own company item graph'
+SELECT ok(
+  (SELECT count(*) FROM public.inspection_templates) = 2
+    AND (SELECT count(*) FROM public.inspection_template_versions) = 3
+    AND (SELECT count(*) FROM public.inspection_template_sections) = 4
+    AND (SELECT count(*) FROM public.inspection_template_items) = 5,
+  'READ_ONLY selects all four own-company graph tables'
 );
 SELECT throws_ok(
-  $$INSERT INTO public.inspection_template_items (section_id, label, sort_order) VALUES ('76000000-0000-0000-0000-000000000104', 'Read-only write', 20)$$,
-  '42501', NULL, 'READ_ONLY cannot mutate items'
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Read-only write')$$,
+  '42501', NULL, 'READ_ONLY cannot insert templates'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_versions (template_id, version_number, is_current) VALUES ('74000000-0000-0000-0000-000000000102', 905, false)$$,
+  '42501', NULL, 'READ_ONLY cannot insert versions'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_sections (version_id, title, sort_order) VALUES ('75000000-0000-0000-0000-000000000104', 'Read-only write', 905)$$,
+  '42501', NULL, 'READ_ONLY cannot insert sections'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_template_items (section_id, label, sort_order) VALUES ('76000000-0000-0000-0000-000000000104', 'Read-only write', 905)$$,
+  '42501', NULL, 'READ_ONLY cannot insert items'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'READ_ONLY cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'READ_ONLY cannot delete from any graph table'
 );
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000006';
@@ -1466,6 +1715,71 @@ SELECT ok(
     AND (SELECT count(*) FROM public.inspection_templates
       WHERE id = '74000000-0000-0000-0000-000000000101') = 0,
   'Company B sees its independent graph and no Company A template'
+);
+
+SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000010';
+SELECT ok(
+  (SELECT count(*) FROM public.inspection_templates) = 0
+    AND (SELECT count(*) FROM public.inspection_template_versions) = 0
+    AND (SELECT count(*) FROM public.inspection_template_sections) = 0
+    AND (SELECT count(*) FROM public.inspection_template_items) = 0,
+  'an inactive ADMIN membership exposes none of the four graph tables'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Inactive member write')$$,
+  '42501', NULL, 'an inactive ADMIN membership cannot insert templates'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'an inactive ADMIN membership cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'an inactive ADMIN membership cannot delete from any graph table'
 );
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000007';
@@ -1480,6 +1794,58 @@ SELECT throws_ok(
   $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Owner write')$$,
   '42501', NULL, 'global owner identity grants no template mutation'
 );
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'global owner identity cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'global owner identity cannot delete from any graph table'
+);
 
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000008';
 SELECT ok(
@@ -1488,6 +1854,62 @@ SELECT ok(
     AND (SELECT count(*) FROM public.inspection_template_sections) = 0
     AND (SELECT count(*) FROM public.inspection_template_items) = 0,
   'an unrelated authenticated profile has no template-internal access'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Unrelated write')$$,
+  '42501', NULL, 'an unrelated authenticated profile cannot insert templates'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'an unrelated authenticated profile cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'an unrelated authenticated profile cannot delete from any graph table'
 );
 
 SET LOCAL request.jwt.claim.sub TO '';
@@ -1499,6 +1921,62 @@ SELECT ok(
   'authenticated without a JWT subject fails closed on the template graph'
 );
 SELECT throws_ok(
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Missing JWT write')$$,
+  '42501', NULL, 'authenticated without a JWT subject cannot insert templates'
+);
+SELECT results_eq(
+  $$WITH
+    changed_template AS (
+      UPDATE public.inspection_templates SET name = name
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_version AS (
+      UPDATE public.inspection_template_versions SET version_number = version_number
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    changed_section AS (
+      UPDATE public.inspection_template_sections SET title = title
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    changed_item AS (
+      UPDATE public.inspection_template_items SET label = label
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM changed_template),
+      (SELECT count(*) FROM changed_version),
+      (SELECT count(*) FROM changed_section),
+      (SELECT count(*) FROM changed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'authenticated without a JWT subject cannot update any graph table'
+);
+SELECT results_eq(
+  $$WITH
+    removed_item AS (
+      DELETE FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000104' RETURNING 1
+    ),
+    removed_section AS (
+      DELETE FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000103' RETURNING 1
+    ),
+    removed_version AS (
+      DELETE FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000102' RETURNING 1
+    ),
+    removed_template AS (
+      DELETE FROM public.inspection_templates
+      WHERE id = '74000000-0000-0000-0000-000000000102' RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM removed_template),
+      (SELECT count(*) FROM removed_version),
+      (SELECT count(*) FROM removed_section),
+      (SELECT count(*) FROM removed_item)$$,
+  $$VALUES (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
+  'authenticated without a JWT subject cannot delete from any graph table'
+);
+SELECT throws_ok(
   $$SELECT security.protect_inspection_template_version()$$,
   '42501', NULL, 'authenticated cannot invoke an immutability trigger function directly'
 );
@@ -1507,10 +1985,293 @@ RESET ROLE;
 SET LOCAL ROLE anon;
 SELECT throws_ok(
   $$SELECT count(*) FROM public.inspection_templates$$,
-  '42501', NULL, 'anon cannot read template internals'
+  '42501', NULL, 'anon cannot read templates'
+);
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.inspection_template_versions$$,
+  '42501', NULL, 'anon cannot read versions'
+);
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.inspection_template_sections$$,
+  '42501', NULL, 'anon cannot read sections'
+);
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.inspection_template_items$$,
+  '42501', NULL, 'anon cannot read items'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.inspection_templates (company_id, name) VALUES ('72000000-0000-0000-0000-000000000001', 'Anon write')$$,
+  '42501', NULL, 'anon cannot insert template internals'
+);
+SELECT throws_ok(
+  $$UPDATE public.inspection_template_versions SET version_number = version_number WHERE id = '75000000-0000-0000-0000-000000000102'$$,
+  '42501', NULL, 'anon cannot update template internals'
+);
+SELECT throws_ok(
+  $$DELETE FROM public.inspection_template_items WHERE id = '77000000-0000-0000-0000-000000000104'$$,
+  '42501', NULL, 'anon cannot delete template internals'
 );
 
 RESET ROLE;
+
+CREATE TEMPORARY TABLE task8_company_b_snapshot AS
+SELECT convert_to(
+  jsonb_agg(graph_state.row_state ORDER BY graph_state.entity, graph_state.id)::text,
+  'UTF8'
+) AS graph_bytes
+FROM (
+  SELECT
+    'template'::text AS entity,
+    template_state.id,
+    to_jsonb(template_state) AS row_state
+  FROM public.inspection_templates AS template_state
+  WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+  UNION ALL
+
+  SELECT
+    'version',
+    version_state.id,
+    to_jsonb(version_state)
+  FROM public.inspection_template_versions AS version_state
+  JOIN public.inspection_templates AS template_state
+    ON template_state.id = version_state.template_id
+  WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+  UNION ALL
+
+  SELECT
+    'section',
+    section_state.id,
+    to_jsonb(section_state)
+  FROM public.inspection_template_sections AS section_state
+  JOIN public.inspection_template_versions AS version_state
+    ON version_state.id = section_state.version_id
+  JOIN public.inspection_templates AS template_state
+    ON template_state.id = version_state.template_id
+  WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+  UNION ALL
+
+  SELECT
+    'item',
+    item_state.id,
+    to_jsonb(item_state)
+  FROM public.inspection_template_items AS item_state
+  JOIN public.inspection_template_sections AS section_state
+    ON section_state.id = item_state.section_id
+  JOIN public.inspection_template_versions AS version_state
+    ON version_state.id = section_state.version_id
+  JOIN public.inspection_templates AS template_state
+    ON template_state.id = version_state.template_id
+  WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+) AS graph_state;
+
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000009';
+
+INSERT INTO public.inspection_templates (id, company_id, name)
+VALUES
+  (
+    '74000000-0000-0000-0000-000000000120',
+    '72000000-0000-0000-0000-000000000001',
+    'Dual-role source'
+  ),
+  (
+    '74000000-0000-0000-0000-000000000121',
+    '72000000-0000-0000-0000-000000000001',
+    'Dual-role same-company target'
+  );
+
+INSERT INTO public.inspection_template_versions (
+  id,
+  template_id,
+  version_number,
+  is_current
+)
+VALUES
+  (
+    '75000000-0000-0000-0000-000000000120',
+    '74000000-0000-0000-0000-000000000120',
+    2,
+    false
+  ),
+  (
+    '75000000-0000-0000-0000-000000000121',
+    '74000000-0000-0000-0000-000000000121',
+    1,
+    true
+  );
+
+INSERT INTO public.inspection_template_sections (
+  id,
+  version_id,
+  title,
+  sort_order
+)
+VALUES
+  (
+    '76000000-0000-0000-0000-000000000120',
+    '75000000-0000-0000-0000-000000000120',
+    'Dual-role source section',
+    30
+  ),
+  (
+    '76000000-0000-0000-0000-000000000121',
+    '75000000-0000-0000-0000-000000000121',
+    'Dual-role target section',
+    40
+  );
+
+INSERT INTO public.inspection_template_items (
+  id,
+  section_id,
+  label,
+  sort_order
+)
+VALUES
+  (
+    '77000000-0000-0000-0000-000000000120',
+    '76000000-0000-0000-0000-000000000120',
+    'Dual-role source item',
+    30
+  ),
+  (
+    '77000000-0000-0000-0000-000000000121',
+    '76000000-0000-0000-0000-000000000121',
+    'Dual-role target item',
+    40
+  );
+
+SELECT ok(
+  (SELECT count(*) FROM public.inspection_template_versions
+    WHERE template_id = '74000000-0000-0000-0000-000000000120'
+      AND is_current) = 0,
+  'a logical template may intentionally have zero current versions'
+);
+
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_versions SET template_id = '74000000-0000-0000-0000-000000000121' WHERE id = '75000000-0000-0000-0000-000000000120'$$,
+  'a dual-company ADMIN can reparent an unfrozen version within Company A'
+);
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_versions SET template_id = '74000000-0000-0000-0000-000000000120' WHERE id = '75000000-0000-0000-0000-000000000120'$$,
+  'the same-company version reparent can be reversed'
+);
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_sections SET version_id = '75000000-0000-0000-0000-000000000121' WHERE id = '76000000-0000-0000-0000-000000000120'$$,
+  'a dual-company ADMIN can reparent an unfrozen section within Company A'
+);
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_sections SET version_id = '75000000-0000-0000-0000-000000000120' WHERE id = '76000000-0000-0000-0000-000000000120'$$,
+  'the same-company section reparent can be reversed'
+);
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_items SET section_id = '76000000-0000-0000-0000-000000000121' WHERE id = '77000000-0000-0000-0000-000000000120'$$,
+  'a dual-company ADMIN can reparent an unfrozen item within Company A'
+);
+SELECT lives_ok(
+  $$UPDATE public.inspection_template_items SET section_id = '76000000-0000-0000-0000-000000000120' WHERE id = '77000000-0000-0000-0000-000000000120'$$,
+  'the same-company item reparent can be reversed'
+);
+
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_templates
+    SET company_id = '72000000-0000-0000-0000-000000000002'
+    WHERE id = '74000000-0000-0000-0000-000000000120';
+    RAISE EXCEPTION 'dual-role template transfer was accepted'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000', NULL,
+  'a dual-company ADMIN/MANAGER cannot transfer a logical template'
+);
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_template_versions
+    SET template_id = '74000000-0000-0000-0000-000000000201'
+    WHERE id = '75000000-0000-0000-0000-000000000120';
+    RAISE EXCEPTION 'dual-role version transfer was accepted'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000', NULL,
+  'a dual-company ADMIN/MANAGER cannot reparent a version across companies'
+);
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_template_sections
+    SET version_id = '75000000-0000-0000-0000-000000000201'
+    WHERE id = '76000000-0000-0000-0000-000000000120';
+    RAISE EXCEPTION 'dual-role section transfer was accepted'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000', NULL,
+  'a dual-company ADMIN/MANAGER cannot reparent a section across companies'
+);
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_template_items
+    SET section_id = '76000000-0000-0000-0000-000000000201'
+    WHERE id = '77000000-0000-0000-0000-000000000120';
+    RAISE EXCEPTION 'dual-role item transfer was accepted'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000', NULL,
+  'a dual-company ADMIN/MANAGER cannot reparent an item across companies'
+);
+SELECT throws_ok(
+  $statement$DO $block$
+  BEGIN
+    UPDATE public.inspection_templates
+    SET company_id = '72000000-0000-0000-0000-000000000002'
+    WHERE id = '74000000-0000-0000-0000-000000000101';
+    RAISE EXCEPTION 'frozen graph transfer was accepted'
+      USING ERRCODE = 'P0001';
+  END
+  $block$;$statement$,
+  '55000', NULL,
+  'a dual-company ADMIN/MANAGER cannot transfer frozen history indirectly'
+);
+
+RESET ROLE;
+
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM public.inspection_templates
+    WHERE id = '74000000-0000-0000-0000-000000000120'
+      AND company_id = '72000000-0000-0000-0000-000000000001'
+  )
+    AND EXISTS (
+      SELECT 1
+      FROM public.inspection_template_versions
+      WHERE id = '75000000-0000-0000-0000-000000000120'
+        AND template_id = '74000000-0000-0000-0000-000000000120'
+        AND NOT is_current
+        AND frozen_at IS NULL
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.inspection_template_sections
+      WHERE id = '76000000-0000-0000-0000-000000000120'
+        AND version_id = '75000000-0000-0000-0000-000000000120'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.inspection_template_items
+      WHERE id = '77000000-0000-0000-0000-000000000120'
+        AND section_id = '76000000-0000-0000-0000-000000000120'
+    ),
+  'all denied dual-company transfers leave the source graph unchanged'
+);
 
 SELECT ok(
   EXISTS (
@@ -1532,6 +2293,95 @@ SELECT ok(
   'v1 remains frozen and non-current while v2 remains current and editable'
 );
 
+WITH current_v1 AS (
+  SELECT convert_to(
+    jsonb_build_object(
+      'version_id', version_state.id,
+      'version_number', version_state.version_number,
+      'sections', (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', section_state.id,
+            'title', section_state.title,
+            'sort_order', section_state.sort_order,
+            'items', (
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'id', item_state.id,
+                  'label', item_state.label,
+                  'sort_order', item_state.sort_order,
+                  'is_required', item_state.is_required
+                )
+                ORDER BY item_state.sort_order
+              )
+              FROM public.inspection_template_items AS item_state
+              WHERE item_state.section_id = section_state.id
+            )
+          )
+          ORDER BY section_state.sort_order
+        )
+        FROM public.inspection_template_sections AS section_state
+        WHERE section_state.version_id = version_state.id
+      )
+    )::text,
+    'UTF8'
+  ) AS graph_bytes
+  FROM public.inspection_template_versions AS version_state
+  WHERE version_state.id = '75000000-0000-0000-0000-000000000101'
+), current_company_b AS (
+  SELECT convert_to(
+    jsonb_agg(
+      graph_state.row_state ORDER BY graph_state.entity, graph_state.id
+    )::text,
+    'UTF8'
+  ) AS graph_bytes
+  FROM (
+    SELECT
+      'template'::text AS entity,
+      template_state.id,
+      to_jsonb(template_state) AS row_state
+    FROM public.inspection_templates AS template_state
+    WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+    UNION ALL
+
+    SELECT 'version', version_state.id, to_jsonb(version_state)
+    FROM public.inspection_template_versions AS version_state
+    JOIN public.inspection_templates AS template_state
+      ON template_state.id = version_state.template_id
+    WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+    UNION ALL
+
+    SELECT 'section', section_state.id, to_jsonb(section_state)
+    FROM public.inspection_template_sections AS section_state
+    JOIN public.inspection_template_versions AS version_state
+      ON version_state.id = section_state.version_id
+    JOIN public.inspection_templates AS template_state
+      ON template_state.id = version_state.template_id
+    WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+
+    UNION ALL
+
+    SELECT 'item', item_state.id, to_jsonb(item_state)
+    FROM public.inspection_template_items AS item_state
+    JOIN public.inspection_template_sections AS section_state
+      ON section_state.id = item_state.section_id
+    JOIN public.inspection_template_versions AS version_state
+      ON version_state.id = section_state.version_id
+    JOIN public.inspection_templates AS template_state
+      ON template_state.id = version_state.template_id
+    WHERE template_state.company_id = '72000000-0000-0000-0000-000000000002'
+  ) AS graph_state
+)
+SELECT ok(
+  (SELECT graph_bytes FROM task8_v1_snapshot) =
+    (SELECT graph_bytes FROM current_v1)
+    AND (SELECT graph_bytes FROM task8_company_b_snapshot) =
+      (SELECT graph_bytes FROM current_company_b),
+  'final byte snapshots prove frozen v1 and the complete Company B graph survived every hostile operation'
+);
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub TO '71000000-0000-0000-0000-000000000001';
 SELECT ok(
@@ -1550,7 +2400,7 @@ RESET ROLE;
 \else
 
 SELECT * FROM skip(
-  79,
+  128,
   'template behavior requires all four Task 8 tables and immutability triggers'
 );
 

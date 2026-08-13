@@ -59,6 +59,15 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $$
 BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.company_id IS DISTINCT FROM OLD.company_id THEN
+      RAISE EXCEPTION 'inspection templates cannot move between companies'
+        USING ERRCODE = '55000';
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM public.inspection_template_versions AS version_state
@@ -80,6 +89,10 @@ VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
 AS $$
+DECLARE
+  old_company_id uuid;
+  new_company_id uuid;
+  template_state record;
 BEGIN
   IF OLD.frozen_at IS NOT NULL THEN
     RAISE EXCEPTION 'frozen inspection template versions are immutable'
@@ -88,6 +101,36 @@ BEGIN
 
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
+  END IF;
+
+  IF NEW.frozen_at IS NOT NULL AND NEW.is_current THEN
+    RAISE EXCEPTION 'a frozen inspection template version cannot remain current'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.template_id IS DISTINCT FROM OLD.template_id THEN
+    FOR template_state IN
+      SELECT template_row.id, template_row.company_id
+      FROM public.inspection_templates AS template_row
+      WHERE template_row.id IN (OLD.template_id, NEW.template_id)
+      ORDER BY template_row.id
+      FOR SHARE OF template_row
+    LOOP
+      IF template_state.id = OLD.template_id THEN
+        old_company_id := template_state.company_id;
+      END IF;
+      IF template_state.id = NEW.template_id THEN
+        new_company_id := template_state.company_id;
+      END IF;
+    END LOOP;
+
+    IF old_company_id IS NOT NULL
+      AND new_company_id IS NOT NULL
+      AND old_company_id <> new_company_id
+    THEN
+      RAISE EXCEPTION 'inspection template versions cannot move between companies'
+        USING ERRCODE = '55000';
+    END IF;
   END IF;
 
   RETURN NEW;
@@ -101,24 +144,62 @@ VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
 AS $$
+DECLARE
+  old_version_id uuid;
+  new_version_id uuid;
+  old_frozen_at timestamptz;
+  new_frozen_at timestamptz;
+  old_company_id uuid;
+  new_company_id uuid;
+  version_state record;
 BEGIN
-  IF TG_OP <> 'INSERT' AND EXISTS (
-    SELECT 1
-    FROM public.inspection_template_versions AS version_state
-    WHERE version_state.id = OLD.version_id
-      AND version_state.frozen_at IS NOT NULL
-  ) THEN
+  IF TG_OP <> 'INSERT' THEN
+    old_version_id := OLD.version_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    new_version_id := NEW.version_id;
+  END IF;
+
+  FOR version_state IN
+    SELECT
+      version_row.id,
+      version_row.frozen_at,
+      template_row.company_id
+    FROM public.inspection_template_versions AS version_row
+    JOIN public.inspection_templates AS template_row
+      ON template_row.id = version_row.template_id
+    WHERE version_row.id = old_version_id
+      OR version_row.id = new_version_id
+    ORDER BY version_row.id
+    FOR SHARE OF version_row
+  LOOP
+    IF version_state.id = old_version_id THEN
+      old_frozen_at := version_state.frozen_at;
+      old_company_id := version_state.company_id;
+    END IF;
+    IF version_state.id = new_version_id THEN
+      new_frozen_at := version_state.frozen_at;
+      new_company_id := version_state.company_id;
+    END IF;
+  END LOOP;
+
+  IF TG_OP <> 'INSERT' AND old_frozen_at IS NOT NULL THEN
     RAISE EXCEPTION 'sections in frozen inspection template versions are immutable'
       USING ERRCODE = '55000';
   END IF;
 
-  IF TG_OP <> 'DELETE' AND EXISTS (
-    SELECT 1
-    FROM public.inspection_template_versions AS version_state
-    WHERE version_state.id = NEW.version_id
-      AND version_state.frozen_at IS NOT NULL
-  ) THEN
+  IF TG_OP <> 'DELETE' AND new_frozen_at IS NOT NULL THEN
     RAISE EXCEPTION 'sections cannot be inserted into or moved to frozen versions'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND NEW.version_id IS DISTINCT FROM OLD.version_id
+    AND old_company_id IS NOT NULL
+    AND new_company_id IS NOT NULL
+    AND old_company_id <> new_company_id
+  THEN
+    RAISE EXCEPTION 'inspection template sections cannot move between companies'
       USING ERRCODE = '55000';
   END IF;
 
@@ -137,28 +218,81 @@ VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
 AS $$
+DECLARE
+  old_section_id uuid;
+  new_section_id uuid;
+  old_version_id uuid;
+  new_version_id uuid;
+  old_frozen_at timestamptz;
+  new_frozen_at timestamptz;
+  old_company_id uuid;
+  new_company_id uuid;
+  section_state record;
+  version_state record;
 BEGIN
-  IF TG_OP <> 'INSERT' AND EXISTS (
-    SELECT 1
-    FROM public.inspection_template_sections AS section_state
-    JOIN public.inspection_template_versions AS version_state
-      ON version_state.id = section_state.version_id
-    WHERE section_state.id = OLD.section_id
-      AND version_state.frozen_at IS NOT NULL
-  ) THEN
+  IF TG_OP <> 'INSERT' THEN
+    old_section_id := OLD.section_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    new_section_id := NEW.section_id;
+  END IF;
+
+  FOR section_state IN
+    SELECT section_row.id, section_row.version_id
+    FROM public.inspection_template_sections AS section_row
+    WHERE section_row.id = old_section_id
+      OR section_row.id = new_section_id
+    ORDER BY section_row.id
+    FOR SHARE OF section_row
+  LOOP
+    IF section_state.id = old_section_id THEN
+      old_version_id := section_state.version_id;
+    END IF;
+    IF section_state.id = new_section_id THEN
+      new_version_id := section_state.version_id;
+    END IF;
+  END LOOP;
+
+  FOR version_state IN
+    SELECT
+      version_row.id,
+      version_row.frozen_at,
+      template_row.company_id
+    FROM public.inspection_template_versions AS version_row
+    JOIN public.inspection_templates AS template_row
+      ON template_row.id = version_row.template_id
+    WHERE version_row.id = old_version_id
+      OR version_row.id = new_version_id
+    ORDER BY version_row.id
+    FOR SHARE OF version_row
+  LOOP
+    IF version_state.id = old_version_id THEN
+      old_frozen_at := version_state.frozen_at;
+      old_company_id := version_state.company_id;
+    END IF;
+    IF version_state.id = new_version_id THEN
+      new_frozen_at := version_state.frozen_at;
+      new_company_id := version_state.company_id;
+    END IF;
+  END LOOP;
+
+  IF TG_OP <> 'INSERT' AND old_frozen_at IS NOT NULL THEN
     RAISE EXCEPTION 'items in frozen inspection template versions are immutable'
       USING ERRCODE = '55000';
   END IF;
 
-  IF TG_OP <> 'DELETE' AND EXISTS (
-    SELECT 1
-    FROM public.inspection_template_sections AS section_state
-    JOIN public.inspection_template_versions AS version_state
-      ON version_state.id = section_state.version_id
-    WHERE section_state.id = NEW.section_id
-      AND version_state.frozen_at IS NOT NULL
-  ) THEN
+  IF TG_OP <> 'DELETE' AND new_frozen_at IS NOT NULL THEN
     RAISE EXCEPTION 'items cannot be inserted into or moved to frozen versions'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND NEW.section_id IS DISTINCT FROM OLD.section_id
+    AND old_company_id IS NOT NULL
+    AND new_company_id IS NOT NULL
+    AND old_company_id <> new_company_id
+  THEN
+    RAISE EXCEPTION 'inspection template items cannot move between companies'
       USING ERRCODE = '55000';
   END IF;
 
@@ -198,7 +332,7 @@ REVOKE ALL ON FUNCTION security.protect_inspection_template_item()
   FROM authenticated;
 
 CREATE TRIGGER inspection_templates_protect_frozen_delete
-BEFORE DELETE ON public.inspection_templates
+BEFORE UPDATE OR DELETE ON public.inspection_templates
 FOR EACH ROW
 EXECUTE FUNCTION security.protect_inspection_template_delete();
 
