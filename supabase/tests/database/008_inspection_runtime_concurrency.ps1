@@ -160,31 +160,198 @@ function Receive-BoundedJob {
   return $received[-1]
 }
 
-function Wait-ForCompletionHold {
+function Wait-ForSessionState {
   param(
     [Parameter(Mandatory = $true)]
-    [string]$ApplicationName
+    [string]$ProbeSql,
+
+    [Parameter(Mandatory = $true)]
+    [string]$FailureMessage
   )
 
   $deadline = [DateTime]::UtcNow.AddSeconds(15)
   while ([DateTime]::UtcNow -lt $deadline) {
-    $escapedName = $ApplicationName.Replace("'", "''")
-    $probe = Invoke-Psql -Sql @"
-SELECT count(*)
-FROM pg_stat_activity
-WHERE application_name = '$escapedName'
-  AND state = 'active'
-  AND wait_event = 'PgSleep';
-"@
+    $probe = Invoke-Psql -Sql $ProbeSql
 
-    if ($probe.ExitCode -eq 0 -and $probe.Output.Trim() -eq '1') {
-      return
+    if ($probe.ExitCode -eq 0 -and $probe.Output.Trim()) {
+      return $probe.Output.Trim()
     }
 
     Start-Sleep -Milliseconds 100
   }
 
-  throw 'Completion session did not reach its bounded hold point.'
+  throw $FailureMessage
+}
+
+function Get-PreRaceSnapshot {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InspectionId
+  )
+
+  $snapshot = Invoke-RequiredSql `
+    -Sql @"
+SELECT
+  encode(
+    convert_to(
+      (to_jsonb(inspection_state) - 'status' - 'completed_at' - 'updated_at')::text,
+      'UTF8'
+    ),
+    'hex'
+  )
+  || '|'
+  || encode(convert_to(to_jsonb(inspection_state)::text, 'UTF8'), 'hex')
+  || '|'
+  || encode(
+    convert_to(
+      COALESCE((
+        SELECT jsonb_agg(to_jsonb(result_state) ORDER BY result_state.id)
+        FROM public.inspection_results AS result_state
+        WHERE result_state.inspection_id = inspection_state.id
+      ), '[]'::jsonb)::text,
+      'UTF8'
+    ),
+    'hex'
+  )
+  || '|'
+  || encode(
+    convert_to(
+      COALESCE((
+        SELECT jsonb_agg(to_jsonb(meter_state) ORDER BY meter_state.id)
+        FROM public.meter_readings AS meter_state
+        WHERE meter_state.inspection_id = inspection_state.id
+      ), '[]'::jsonb)::text,
+      'UTF8'
+    ),
+    'hex'
+  )
+  || '|'
+  || encode(
+    convert_to(
+      COALESCE((
+        SELECT jsonb_agg(to_jsonb(change_state) ORDER BY change_state.id)
+        FROM public.inspection_changes AS change_state
+        WHERE change_state.inspection_id = inspection_state.id
+      ), '[]'::jsonb)::text,
+      'UTF8'
+    ),
+    'hex'
+  )
+FROM public.inspections AS inspection_state
+WHERE inspection_state.id = '$InspectionId';
+"@ `
+    -FailureMessage 'Could not capture the complete pre-race snapshot.'
+
+  $parts = $snapshot.Trim().Split('|')
+  $emptyPartCount = @($parts | Where-Object { -not $_ }).Count
+  if ($parts.Count -ne 5 -or $emptyPartCount -gt 0) {
+    throw 'The complete pre-race snapshot was malformed.'
+  }
+
+  return [pscustomobject]@{
+    StableInspection = $parts[0]
+    FullInspection = $parts[1]
+    Results = $parts[2]
+    Meters = $parts[3]
+    History = $parts[4]
+  }
+}
+
+function Test-ExactFinalSnapshot {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InspectionId,
+
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$Before
+  )
+
+  $snapshotResult = Invoke-RequiredSql `
+    -Sql @"
+WITH inspection_state AS (
+  SELECT *
+  FROM public.inspections
+  WHERE id = '$InspectionId'
+), completion_state AS (
+  SELECT *
+  FROM public.inspection_changes
+  WHERE inspection_id = '$InspectionId'
+    AND change_type = 'COMPLETED'
+)
+SELECT (
+  SELECT
+    inspection_state.status = 'COMPLETED'
+    AND inspection_state.completed_at IS NOT NULL
+    AND inspection_state.updated_at >= inspection_state.completed_at
+    AND encode(
+      convert_to(
+        (
+          to_jsonb(inspection_state)
+          - 'status'
+          - 'completed_at'
+          - 'updated_at'
+        )::text,
+        'UTF8'
+      ),
+      'hex'
+    ) = '$($Before.StableInspection)'
+    AND encode(
+      convert_to(
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(result_state) ORDER BY result_state.id)
+          FROM public.inspection_results AS result_state
+          WHERE result_state.inspection_id = inspection_state.id
+        ), '[]'::jsonb)::text,
+        'UTF8'
+      ),
+      'hex'
+    ) = '$($Before.Results)'
+    AND encode(
+      convert_to(
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(meter_state) ORDER BY meter_state.id)
+          FROM public.meter_readings AS meter_state
+          WHERE meter_state.inspection_id = inspection_state.id
+        ), '[]'::jsonb)::text,
+        'UTF8'
+      ),
+      'hex'
+    ) = '$($Before.Meters)'
+    AND encode(
+      convert_to(
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(change_state) ORDER BY change_state.id)
+          FROM public.inspection_changes AS change_state
+          WHERE change_state.inspection_id = inspection_state.id
+            AND change_state.change_type <> 'COMPLETED'
+        ), '[]'::jsonb)::text,
+        'UTF8'
+      ),
+      'hex'
+    ) = '$($Before.History)'
+    AND (SELECT count(*) FROM completion_state) = 1
+    AND EXISTS (
+      SELECT 1
+      FROM completion_state
+      WHERE completion_state.id IS NOT NULL
+        AND completion_state.inspection_id = inspection_state.id
+        AND completion_state.company_id = inspection_state.company_id
+        AND completion_state.property_id = inspection_state.property_id
+        AND completion_state.changed_by = '$fixtureProfileId'
+        AND completion_state.change_type = 'COMPLETED'
+        AND encode(
+          convert_to(completion_state.old_value::text, 'UTF8'),
+          'hex'
+        ) = '$($Before.FullInspection)'
+        AND completion_state.new_value = to_jsonb(inspection_state)
+        AND completion_state.created_at IS NOT NULL
+    )
+  FROM inspection_state
+)::text;
+"@ `
+    -FailureMessage 'The exact final snapshot query failed.'
+
+  return $snapshotResult.Trim() -eq 'true'
 }
 
 function Test-Race {
@@ -199,44 +366,105 @@ function Test-Race {
     [string]$ChildSql,
 
     [Parameter(Mandatory = $true)]
-    [string]$PostconditionSql,
-
-    [Parameter(Mandatory = $true)]
-    [string]$ExpectedPostcondition
+    [ValidateRange(1, 100)]
+    [int]$GateKey
   )
 
-  $applicationName = 'jtc_task9_' + $Name
+  $gateApplicationName = 'jtc_task9_' + $Name + '_gate'
+  $parentApplicationName = 'jtc_task9_' + $Name + '_parent'
+  $childApplicationName = 'jtc_task9_' + $Name + '_child'
+  $gateHoldSeconds = $HoldSeconds + 20
+  $gateSql = @"
+SET application_name = '$gateApplicationName';
+SELECT pg_advisory_lock(9009, $GateKey);
+SELECT pg_sleep($gateHoldSeconds);
+"@
   $completionSql = @"
 BEGIN;
-SET LOCAL application_name = '$applicationName';
+SET LOCAL application_name = '$parentApplicationName';
 SET LOCAL request.jwt.claim.sub = '$fixtureProfileId';
-SET LOCAL lock_timeout = '10s';
+SET LOCAL lock_timeout = '20s';
 UPDATE public.inspections
 SET status = 'COMPLETED'
 WHERE id = '$InspectionId';
-SELECT pg_sleep($HoldSeconds);
+SELECT pg_advisory_lock(9009, $GateKey);
 COMMIT;
 "@
 
+  $gateJob = $null
   $completionJob = $null
   $childJob = $null
   try {
+    $before = Get-PreRaceSnapshot -InspectionId $InspectionId
+
+    $gateJob = Start-PsqlJob -Sql $gateSql
+    [void](Wait-ForSessionState `
+      -ProbeSql @"
+SELECT 'gate_held'
+FROM pg_stat_activity
+WHERE application_name = '$gateApplicationName'
+  AND state = 'active'
+  AND wait_event = 'PgSleep';
+"@ `
+      -FailureMessage "$Name advisory gate did not reach its hold point.")
+
     $completionJob = Start-PsqlJob -Sql $completionSql
-    Wait-ForCompletionHold -ApplicationName $applicationName
+    [void](Wait-ForSessionState `
+      -ProbeSql @"
+SELECT 'parent_gated'
+FROM pg_stat_activity AS parent_state
+WHERE parent_state.application_name = '$parentApplicationName'
+  AND parent_state.state = 'active'
+  AND parent_state.wait_event_type = 'Lock'
+  AND parent_state.wait_event = 'advisory'
+  AND EXISTS (
+    SELECT 1
+    FROM pg_stat_activity AS gate_state
+    WHERE gate_state.application_name = '$gateApplicationName'
+      AND gate_state.pid = ANY (pg_blocking_pids(parent_state.pid))
+  );
+"@ `
+      -FailureMessage "$Name completion did not acquire the inspection row before gating.")
 
     $childStatement = @"
+SET application_name = '$childApplicationName';
 SET request.jwt.claim.sub = '$fixtureProfileId';
 SET lock_timeout = '10s';
 $ChildSql
 "@
     $childJob = Start-PsqlJob -Sql $childStatement
 
-    $childResult = Receive-BoundedJob `
-      -Job $childJob `
-      -FailureMessage "$Name child session did not finish in time."
+    $childWaitEvent = Wait-ForSessionState `
+      -ProbeSql @"
+SELECT child_state.wait_event
+FROM pg_stat_activity AS child_state
+JOIN pg_stat_activity AS parent_state
+  ON parent_state.application_name = '$parentApplicationName'
+WHERE child_state.application_name = '$childApplicationName'
+  AND child_state.state = 'active'
+  AND child_state.wait_event_type = 'Lock'
+  AND child_state.wait_event IN ('transactionid', 'tuple')
+  AND parent_state.pid = ANY (pg_blocking_pids(child_state.pid));
+"@ `
+      -FailureMessage "$Name child was not observed blocked by its completion backend."
+
+    $gateRelease = Invoke-RequiredSql `
+      -Sql @"
+SELECT COALESCE(bool_and(pg_terminate_backend(pid)), false)::text
+FROM pg_stat_activity
+WHERE application_name = '$gateApplicationName';
+"@ `
+      -FailureMessage "$Name advisory gate release failed."
+    if ($gateRelease.Trim() -ne 'true') {
+      throw "$Name advisory gate backend was not released."
+    }
+
     $completionResult = Receive-BoundedJob `
       -Job $completionJob `
       -FailureMessage "$Name completion session did not finish in time."
+    $childResult = Receive-BoundedJob `
+      -Job $childJob `
+      -FailureMessage "$Name child session did not finish in time."
 
     if ($completionResult.ExitCode -ne 0) {
       $raceFailures.Add("$Name completion failed unexpectedly.")
@@ -253,21 +481,18 @@ $ChildSql
       return
     }
 
-    $postcondition = Invoke-RequiredSql `
-      -Sql $PostconditionSql `
-      -FailureMessage "$Name postcondition query failed."
-    if ($postcondition.Trim() -ne $ExpectedPostcondition) {
-      $raceFailures.Add("$Name final snapshot did not match.")
+    if (-not (Test-ExactFinalSnapshot -InspectionId $InspectionId -Before $before)) {
+      $raceFailures.Add("$Name complete final snapshot did not match.")
       return
     }
 
-    Write-Output "$Name passed"
+    Write-Output "$Name passed (child_wait=$childWaitEvent)"
   }
   catch {
     $raceFailures.Add("$Name failed: $($_.Exception.Message)")
   }
   finally {
-    foreach ($job in @($childJob, $completionJob)) {
+    foreach ($job in @($childJob, $completionJob, $gateJob)) {
       if ($null -ne $job) {
         if ($job.State -eq 'Running') {
           Stop-Job -Job $job -ErrorAction SilentlyContinue
@@ -398,43 +623,37 @@ VALUES
     -Name 'result_insert' `
     -InspectionId '8d000000-0000-0000-0000-000000000001' `
     -ChildSql "INSERT INTO public.inspection_results (id, company_id, property_id, inspection_id, template_item_id, severity, operational_action) VALUES ('8e000000-0000-0000-0000-000000000001', '$fixtureCompanyId', '$fixturePropertyId', '8d000000-0000-0000-0000-000000000001', '$fixtureItemId', 'PASS', 'MONITOR');" `
-    -PostconditionSql "SELECT status || '|' || (SELECT count(*) FROM public.inspection_results WHERE inspection_id = '8d000000-0000-0000-0000-000000000001') || '|' || (SELECT count(*) FROM public.inspection_changes WHERE inspection_id = '8d000000-0000-0000-0000-000000000001' AND change_type = 'RESULT_CHANGED') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000001';" `
-    -ExpectedPostcondition 'COMPLETED|0|0'
+    -GateKey 1
 
   Test-Race `
     -Name 'result_update' `
     -InspectionId '8d000000-0000-0000-0000-000000000002' `
     -ChildSql "UPDATE public.inspection_results SET comment = 'hostile update' WHERE id = '8e000000-0000-0000-0000-000000000002';" `
-    -PostconditionSql "SELECT status || '|' || (SELECT comment FROM public.inspection_results WHERE id = '8e000000-0000-0000-0000-000000000002') || '|' || (SELECT count(*) FROM public.inspection_changes WHERE inspection_id = '8d000000-0000-0000-0000-000000000002' AND change_type = 'RESULT_CHANGED') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000002';" `
-    -ExpectedPostcondition 'COMPLETED|original update|1'
+    -GateKey 2
 
   Test-Race `
     -Name 'result_delete' `
     -InspectionId '8d000000-0000-0000-0000-000000000003' `
     -ChildSql "DELETE FROM public.inspection_results WHERE id = '8e000000-0000-0000-0000-000000000003';" `
-    -PostconditionSql "SELECT status || '|' || (SELECT count(*) FROM public.inspection_results WHERE id = '8e000000-0000-0000-0000-000000000003') || '|' || (SELECT count(*) FROM public.inspection_changes WHERE inspection_id = '8d000000-0000-0000-0000-000000000003' AND change_type = 'RESULT_CHANGED') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000003';" `
-    -ExpectedPostcondition 'COMPLETED|1|1'
+    -GateKey 3
 
   Test-Race `
     -Name 'meter_insert' `
     -InspectionId '8d000000-0000-0000-0000-000000000004' `
     -ChildSql "INSERT INTO public.meter_readings (id, company_id, property_id, inspection_id, meter_type, reading_value, unit) VALUES ('8f000000-0000-0000-0000-000000000004', '$fixtureCompanyId', '$fixturePropertyId', '8d000000-0000-0000-0000-000000000004', 'WATER', 14.5, 'm3');" `
-    -PostconditionSql "SELECT status || '|' || (SELECT count(*) FROM public.meter_readings WHERE inspection_id = '8d000000-0000-0000-0000-000000000004') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000004';" `
-    -ExpectedPostcondition 'COMPLETED|0'
+    -GateKey 4
 
   Test-Race `
     -Name 'meter_update' `
     -InspectionId '8d000000-0000-0000-0000-000000000005' `
     -ChildSql "UPDATE public.meter_readings SET reading_value = 999 WHERE id = '8f000000-0000-0000-0000-000000000005';" `
-    -PostconditionSql "SELECT status || '|' || (SELECT reading_value FROM public.meter_readings WHERE id = '8f000000-0000-0000-0000-000000000005') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000005';" `
-    -ExpectedPostcondition 'COMPLETED|15.5'
+    -GateKey 5
 
   Test-Race `
     -Name 'meter_delete' `
     -InspectionId '8d000000-0000-0000-0000-000000000006' `
     -ChildSql "DELETE FROM public.meter_readings WHERE id = '8f000000-0000-0000-0000-000000000006';" `
-    -PostconditionSql "SELECT status || '|' || (SELECT count(*) FROM public.meter_readings WHERE id = '8f000000-0000-0000-0000-000000000006') FROM public.inspections WHERE id = '8d000000-0000-0000-0000-000000000006';" `
-    -ExpectedPostcondition 'COMPLETED|1'
+    -GateKey 6
 
   if ($raceFailures.Count -gt 0) {
     foreach ($failure in $raceFailures) {
