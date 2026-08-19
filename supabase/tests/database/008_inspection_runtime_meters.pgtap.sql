@@ -821,6 +821,7 @@ WITH expected(trigger_name, table_name, trigger_type) AS (
     ])
     AND NOT trigger_state.tgisinternal
     AND trigger_state.tgenabled = 'O'
+    AND trigger_state.tgname NOT LIKE '%\_audit\_%' ESCAPE '\'
 )
 SELECT ok(
   NOT EXISTS (
@@ -828,7 +829,7 @@ SELECT ok(
     UNION ALL
     (SELECT * FROM actual EXCEPT SELECT * FROM expected)
   ),
-  'exactly five enabled row-level runtime and history triggers exist'
+  'exactly five enabled row-level runtime and history triggers exist (Task 13''s audit trigger is separate)'
 );
 
 SELECT ok(
