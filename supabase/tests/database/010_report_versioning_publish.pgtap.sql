@@ -212,6 +212,7 @@ WITH expected(policyname, cmd) AS (
   FROM pg_policies
   WHERE schemaname = 'public'
     AND tablename = 'inspection_report_versions'
+    AND policyname NOT LIKE '%\_owner\_%' ESCAPE '\'
 )
 SELECT ok(
   NOT EXISTS (
@@ -219,7 +220,7 @@ SELECT ok(
     UNION ALL
     (SELECT * FROM actual EXCEPT SELECT * FROM expected)
   ),
-  'inspection_report_versions has exactly SELECT, INSERT, and DRAFT-scoped UPDATE policies and no DELETE path'
+  'inspection_report_versions has exactly SELECT, INSERT, and DRAFT-scoped UPDATE company policies and no DELETE path (Task 12''s owner policy is separate)'
 );
 
 SELECT ok(
@@ -237,8 +238,9 @@ SELECT ok(
     FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'inspection_report_versions'
+      AND policyname NOT LIKE '%\_owner\_%' ESCAPE '\'
   ), false),
-  'report policies are authenticated, scope-gated, and contain no owner path'
+  'report company policies are authenticated, scope-gated, and contain no owner path (Task 12''s owner policy is separate)'
 );
 
 SELECT ok(
@@ -717,9 +719,20 @@ SELECT throws_ok(
 );
 
 SET LOCAL request.jwt.claim.sub TO 'a1000000-0000-0000-0000-000000000007';
-SELECT ok(
-  (SELECT count(*) FROM public.inspection_report_versions) = 0,
-  'OWNER cannot read any report version, including DRAFT'
+SELECT is(
+  (SELECT count(*) FROM public.inspection_report_versions),
+  1::bigint,
+  'OWNER sees exactly her one published FINAL report version (Task 12 owner read path)'
+);
+SELECT is(
+  (SELECT id FROM public.inspection_report_versions),
+  'a9000000-0000-0000-0000-000000000002'::uuid,
+  'OWNER sees the current FINAL version specifically, not any other version'
+);
+SELECT is(
+  (SELECT count(*) FROM public.inspection_report_versions WHERE id IN ('a9000000-0000-0000-0000-000000000001', 'a9000000-0000-0000-0000-000000000020', 'a9000000-0000-0000-0000-000000000010')),
+  0::bigint,
+  'OWNER cannot read SUPERSEDED or DRAFT report versions by known UUID'
 );
 SELECT throws_ok(
   $$INSERT INTO public.inspection_report_versions (company_id, property_id, inspection_id) VALUES ('a2000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000001', 'a8000000-0000-0000-0000-000000000001')$$,
@@ -754,7 +767,7 @@ RESET ROLE;
 \else
 
 SELECT * FROM skip(
-  57,
+  59,
   'report behavior requires the complete Task 11 table, trigger, function, and policies'
 );
 

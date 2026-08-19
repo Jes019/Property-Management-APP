@@ -262,7 +262,6 @@ SELECT ok(
         'is_assigned_to_inspection',
         'can_view_operational_record',
         'can_manage_operational_record',
-        'owner_can_view_report',
         'owner_can_view_quote_version',
         'owner_can_view_document'
       ])

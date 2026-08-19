@@ -267,6 +267,7 @@ WITH expected(policyname, cmd) AS (
   WHERE schemaname = 'storage'
     AND tablename = 'objects'
     AND policyname LIKE 'inspection_media_objects_%'
+    AND policyname NOT LIKE '%\_owner\_%' ESCAPE '\'
 )
 SELECT ok(
   NOT EXISTS (
@@ -274,7 +275,7 @@ SELECT ok(
     UNION ALL
     (SELECT * FROM actual EXCEPT SELECT * FROM expected)
   ),
-  'storage.objects has exactly four Task 10 inspection-media policies'
+  'storage.objects has exactly four Task 10 inspection-media policies (Task 12''s owner policy is separate)'
 );
 
 SELECT ok(
@@ -294,6 +295,7 @@ SELECT ok(
     WHERE schemaname = 'storage'
       AND tablename = 'objects'
       AND policyname LIKE 'inspection_media_objects_%'
+      AND policyname NOT LIKE '%\_owner\_%' ESCAPE '\'
   ), false),
   'storage policies are authenticated-only and resolve through dedicated DB helpers'
 );
