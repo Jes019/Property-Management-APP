@@ -335,10 +335,10 @@ SELECT is(
   'current_profile_id returns the authenticated JWT profile'
 );
 
-SELECT is(
-  (SELECT count(*) FROM public.company_memberships),
-  0::bigint,
-  'authenticated cannot read membership rows directly through zero-policy RLS'
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.company_memberships$$,
+  '42501', NULL,
+  'authenticated has no direct table privilege on company_memberships; access is mediated only through SECURITY DEFINER helpers'
 );
 
 SET LOCAL request.jwt.claim.sub TO '';
