@@ -408,12 +408,6 @@ SELECT ok(
   'one enabled row-level BEFORE trigger protects every media_assets mutation'
 );
 
-SELECT ok(
-  to_regclass('public.inspection_report_versions') IS NULL
-    AND to_regclass('public.reports') IS NULL,
-  'Task 11 report versioning remains absent'
-);
-
 SELECT (
   to_regclass('public.media_assets') IS NOT NULL
     AND to_regprocedure(
