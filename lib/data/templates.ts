@@ -30,7 +30,16 @@ export async function listCompanyTemplates(
   return (data ?? []) as InspectionTemplate[];
 }
 
-export async function getCurrentFrozenVersion(
+/**
+ * The version to start a new inspection against. Task 7's own trigger
+ * (security.protect_inspection_template_version) forbids a version being
+ * both frozen and is_current at the same time — is_current tracks the
+ * mutable draft being edited, frozen_at marks an immutable, inspectable
+ * snapshot, and a version becomes one or the other, never both. So the
+ * right lookup is simply the most recently frozen version, not "the
+ * current one that's also frozen" (which can never exist).
+ */
+export async function getLatestFrozenVersion(
   supabase: SupabaseClient,
   templateId: string,
 ): Promise<FrozenTemplateVersion | null> {
@@ -38,8 +47,9 @@ export async function getCurrentFrozenVersion(
     .from("inspection_template_versions")
     .select("id, template_id, version_number, frozen_at")
     .eq("template_id", templateId)
-    .eq("is_current", true)
     .not("frozen_at", "is", null)
+    .order("frozen_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) throw error;

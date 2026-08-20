@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { createInspection } from "@/lib/data/inspections";
-import { getCurrentFrozenVersion, type InspectionTemplate } from "@/lib/data/templates";
+import { getLatestFrozenVersion, type InspectionTemplate } from "@/lib/data/templates";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -39,9 +39,9 @@ export function NewInspectionForm({
 
     try {
       const supabase = createClient();
-      const version = await getCurrentFrozenVersion(supabase, templateId);
+      const version = await getLatestFrozenVersion(supabase, templateId);
       if (!version) {
-        setError("This template has no frozen current version to inspect against.");
+        setError("This template has no frozen version to inspect against.");
         return;
       }
 
