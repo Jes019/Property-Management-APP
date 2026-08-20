@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { IconBuilding, IconHome } from "@/components/icons";
+import { SignOutButton } from "@/components/sign-out-button";
 
 interface NavItem {
   href: string;
@@ -36,6 +37,7 @@ export function AppShell({
       <header className="fixed top-0 z-50 w-full border-b border-border bg-white shadow-sm">
         <div className="flex h-16 items-center justify-between px-6">
           <h1 className="text-base font-bold uppercase tracking-tight">{title}</h1>
+          <SignOutButton />
         </div>
       </header>
       <main className="space-y-6 px-6 pb-28 pt-20">{children}</main>
