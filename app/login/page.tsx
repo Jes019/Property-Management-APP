@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { isOwner } from "@/lib/data/session";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -27,7 +28,13 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // A user with no company membership at all should never land on the
+    // company dashboard — route them straight into their own portal.
+    // property_owners ownership is the reliable, RLS-safe signal for this
+    // (see lib/data/session.ts); every destination page still enforces its
+    // own access independently regardless of this choice.
+    const ownerAccount = await isOwner(supabase).catch(() => false);
+    router.push(ownerAccount ? "/owner" : "/dashboard");
     router.refresh();
   }
 

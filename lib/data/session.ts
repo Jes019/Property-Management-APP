@@ -18,6 +18,22 @@ export interface PropertyCompanyContext {
  * database is what actually enforces which mutations succeed. UI hiding
  * is not security.
  */
+/**
+ * Whether the current authenticated user owns at least one property.
+ * property_owners is SELECT-granted with RLS scoped to the caller's own
+ * rows (Task 6), so a non-empty result here already proves ownership
+ * without ever touching company_memberships. Used only to decide where a
+ * freshly-logged-in user lands (/owner vs /dashboard) — a routing
+ * convenience, not an authorization decision; every destination page
+ * enforces its own access independently regardless of this choice.
+ */
+export async function isOwner(supabase: SupabaseClient): Promise<boolean> {
+  const { data, error } = await supabase.from("property_owners").select("property_id").limit(1);
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 export async function getPropertyCompanyContext(
   supabase: SupabaseClient,
   propertyId: string,
